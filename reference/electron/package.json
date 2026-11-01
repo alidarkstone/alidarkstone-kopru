@@ -1,0 +1,26 @@
+{
+  "name": "kopru",
+  "productName": "Köprü",
+  "version": "0.1.0",
+  "description": "İki Windows bilgisayar arasında fare/klavye, pano ve dosya paylaşımı. Hesap yok, bulut yok, uçtan uca şifreli.",
+  "license": "MIT",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/core.test.js test/features.test.js",
+    "build-helper": "helper\\windows\\build.cmd",
+    "dist": "npm run build-helper && electron-builder --win nsis"
+  },
+  "devDependencies": {
+    "electron": "38.8.6",
+    "electron-builder": "25.1.8"
+  },
+  "build": {
+    "appId": "local.kopru.app",
+    "productName": "Köprü",
+    "files": ["src/**/*", "package.json"],
+    "extraResources": [{ "from": "helper/windows/bin", "to": "helper/windows/bin", "filter": ["KopruInput.exe"] }],
+    "win": { "target": "nsis" },
+    "nsis": { "oneClick": false, "perMachine": false, "allowToChangeInstallationDirectory": true }
+  }
+}

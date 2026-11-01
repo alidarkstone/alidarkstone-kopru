@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:;">
+  <title>Köprü</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <div class="brand"><span class="logo">⇄</span> Köprü</div>
+    <div class="me">
+      <input id="myName" maxlength="40" spellcheck="false" title="Bu bilgisayarın adı">
+      <span class="muted" id="myId"></span>
+    </div>
+  </header>
+
+  <main>
+    <section class="card" id="statusCard">
+      <div class="status-row">
+        <span class="dot" id="dot"></span>
+        <div>
+          <div class="status-title" id="statusTitle">Bağlı değil</div>
+          <div class="muted" id="statusSub"></div>
+        </div>
+        <button id="disconnectBtn" class="ghost hidden">Bağlantıyı kes</button>
+      </div>
+
+      <div id="pairBox" class="pair hidden">
+        <p>Bu kodun <b>iki bilgisayarda da aynı</b> olduğunu kontrol edin:</p>
+        <div class="sas" id="sas"></div>
+        <div class="row">
+          <button id="pairYes">Aynı, eşleştir</button>
+          <button id="pairNo" class="ghost">Farklı, iptal</button>
+        </div>
+        <p class="muted" id="pairWait"></p>
+      </div>
+    </section>
+
+    <div class="grid">
+      <section class="card">
+        <h2>Ağdaki cihazlar</h2>
+        <ul id="devices" class="list"></ul>
+        <p class="muted" id="noDevices">Aynı ağdaki başka bir bilgisayarda Köprü'yü açın. Görünmüyorsa adresiyle bağlanın:</p>
+        <form id="manual" class="row">
+          <input id="addr" placeholder="192.168.1.20" spellcheck="false">
+          <button type="submit" class="ghost">Bağlan</button>
+        </form>
+      </section>
+
+      <section class="card">
+        <h2>Paylaşım</h2>
+        <label class="switch-row">
+          <span><b>Pano</b><br><span class="muted">Kopyaladığınız metin diğer bilgisayara da gider</span></span>
+          <input type="checkbox" id="clipToggle">
+        </label>
+        <label class="switch-row" id="inputRow">
+          <span><b>Fare ve klavye</b><br><span class="muted" id="inputSub">İmleci ekran kenarından diğer bilgisayara geçirin</span></span>
+          <input type="checkbox" id="inputToggle">
+        </label>
+        <div class="row edge-row">
+          <span class="muted">Diğer bilgisayar bu ekranın</span>
+          <select id="edge">
+            <option value="right">sağında</option>
+            <option value="left">solunda</option>
+            <option value="top">üstünde</option>
+            <option value="bottom">altında</option>
+          </select>
+        </div>
+        <p class="muted small">İmleç diğer bilgisayardayken <b>Scroll Lock</b> tuşu kontrolü hemen geri alır.</p>
+      </section>
+    </div>
+
+    <section class="card" id="dropZone">
+      <div class="row between">
+        <h2>Dosyalar</h2>
+        <div class="row">
+          <button id="sendFiles">Dosya gönder</button>
+          <button id="openDownloads" class="ghost">Gelen klasörü</button>
+        </div>
+      </div>
+      <p class="muted small">Dosyaları buraya sürükleyip bırakabilirsiniz. Gelen dosyalar: <span id="dlDir"></span> <a href="#" id="changeDir">değiştir</a></p>
+      <ul id="transfers" class="list"></ul>
+    </section>
+
+    <section class="card">
+      <h2>Eşleşmiş cihazlar</h2>
+      <ul id="trusted" class="list"></ul>
+      <p class="muted small" id="noTrusted">Henüz eşleşmiş cihaz yok.</p>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
