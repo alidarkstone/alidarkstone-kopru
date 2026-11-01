@@ -34,6 +34,9 @@ pub const DEAD_AFTER: Duration = Duration::from_secs(20);
 pub const PAIR_TIMEOUT: Duration = Duration::from_secs(90);
 pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(8);
 const WRITE_TIMEOUT: Duration = Duration::from_secs(20);
+/// Gelen iki oturum başlangıcı arasındaki en kısa süre. Ortadaki birinin sunucuya arka arkaya
+/// görünmeden bağlanıp 6 haneli kodu tutturana kadar denemesini yavaşlatır (90 sn'de en çok ~90 deneme).
+pub const INCOMING_GAP: Duration = Duration::from_secs(1);
 /// Yazma kuyruğunda bu kadar bayt birikince `send` (okuyucu iş parçacığı dışından çağrıldıysa) bekler.
 const HIGH_WATER: usize = 4 * 1024 * 1024;
 const LOW_WATER: usize = 1024 * 1024;
@@ -73,6 +76,8 @@ struct St {
     peer: Option<PeerInfo>,
     pair: Option<Pair>,
     known: bool,
+    /// `Checking` aşamasının bitmesi gereken an (karşı taraf `trust` göndermezse).
+    check_deadline: Option<Instant>,
     last_error: String,
     port: Option<u16>,
 }
@@ -221,6 +226,7 @@ impl Link {
                     peer: None,
                     pair: None,
                     known: false,
+                    check_deadline: None,
                     last_error: String::new(),
                     port: None,
                 }),
@@ -245,9 +251,22 @@ impl Link {
         lock(&self.inner.st).port = Some(port);
         let inner = self.inner.clone();
         thread::Builder::new().name("kopru-accept".into()).spawn(move || {
+            let mut last_start: Option<Instant> = None;
             while !inner.closed.load(Ordering::SeqCst) {
+                if let Some(t) = last_start {
+                    // Bekleyen bağlantılar çekirdeğin kuyruğunda bekler.
+                    let left = INCOMING_GAP.saturating_sub(t.elapsed());
+                    if !left.is_zero() {
+                        thread::sleep(left.min(Duration::from_millis(50)));
+                        continue;
+                    }
+                }
                 match l.accept() {
-                    Ok((s, _)) => inner.incoming(s),
+                    Ok((s, _)) => {
+                        if inner.incoming(s) {
+                            last_start = Some(Instant::now());
+                        }
+                    }
                     Err(e) if e.kind() == io::ErrorKind::WouldBlock => thread::sleep(Duration::from_millis(50)),
                     Err(_) => thread::sleep(Duration::from_millis(100)),
                 }
@@ -396,6 +415,7 @@ impl Inner {
         st.peer = None;
         st.pair = None;
         st.known = false;
+        st.check_deadline = None;
         st.last_error = reason.unwrap_or_default();
         st.state = State::Idle;
         true
@@ -427,14 +447,15 @@ impl Inner {
         }
     }
 
-    fn incoming(self: &Arc<Self>, s: TcpStream) {
+    /// Oturum başlatıldıysa true.
+    fn incoming(self: &Arc<Self>, s: TcpStream) -> bool {
         let _ = s.set_nonblocking(false);
         let sess = {
             let mut st = lock(&self.st);
             if self.closed.load(Ordering::SeqCst) || st.session.is_some() {
                 // zaten bir oturum var
                 let _ = s.shutdown(Shutdown::Both);
-                return;
+                return false;
             }
             let sess = Session::new(self.next_id.fetch_add(1, Ordering::SeqCst));
             st.session = Some(sess.clone());
@@ -448,6 +469,7 @@ impl Inner {
         if r.is_err() {
             self.close_session(&sess, Some("iş parçacığı başlatılamadı".into()));
         }
+        true
     }
 
     fn run_session(self: Arc<Self>, sess: Arc<Session>, stream: Option<TcpStream>, addr: Option<SocketAddr>, role: Role) {
@@ -510,6 +532,7 @@ impl Inner {
                 sess.enqueue(b, false);
             }
             st.state = State::Checking;
+            st.check_deadline = Some(Instant::now() + lock(&self.timings).pair_timeout);
         }
         self.emit(LinkEvent::State);
 
@@ -598,7 +621,12 @@ impl Inner {
             if !Self::is_current(&st, &sess) {
                 return;
             }
-            if st.state == State::Pairing && st.pair.as_ref().map(|p| now >= p.deadline).unwrap_or(false) {
+            let expired = match st.state {
+                State::Pairing => st.pair.as_ref().map(|p| now >= p.deadline).unwrap_or(false),
+                State::Checking => st.check_deadline.map(|d| now >= d).unwrap_or(false),
+                _ => false,
+            };
+            if expired {
                 self.detach_locked(&mut st, Some("eşleştirme zaman aşımı".into()), None);
                 drop(st);
                 return self.emit(LinkEvent::State);
@@ -920,6 +948,45 @@ pub(crate) mod tests {
         wait("koptu", || link.last_error() == "bağlantı koptu");
         drop(s);
         link.close();
+    }
+
+    /// El sıkışmayı bitirip `trust` göndermeyen, yalnızca ping atan eş tek oturum yerini sonsuza dek tutamaz.
+    #[test]
+    fn checking_peer_cannot_hold_slot() {
+        let a = node("A");
+        a.link.set_timings(Duration::from_millis(100), Duration::from_millis(500), Duration::from_millis(800));
+        let link = a.link.clone();
+        let mut s = TcpStream::connect(local(link.listen(0).unwrap())).unwrap();
+        let (_, mut sealer, _) = raw_handshake(&s, &Identity::generate(), "sahte", Role::Client).unwrap();
+        wait("kontrol", || link.phase() == LinkPhase::Checking);
+        let t = Instant::now();
+        while t.elapsed() < Duration::from_secs(3) && link.phase() == LinkPhase::Checking {
+            let ct = sealer.seal(br#"{"t":"ping"}"#).unwrap();
+            if write_frame(&mut s, &ct).is_err() {
+                break;
+            }
+            thread::sleep(Duration::from_millis(50));
+        }
+        assert_eq!(link.phase(), LinkPhase::Idle);
+        assert_eq!(link.last_error(), "eşleştirme zaman aşımı");
+        link.close();
+    }
+
+    /// Gelen el sıkışmalar seyreltilir: ortadaki biri sunucuya arka arkaya bağlanıp kodu
+    /// tutana kadar (karşı tarafa görünmeden) deneme yapamaz.
+    #[test]
+    fn incoming_handshakes_are_paced() {
+        let a = node("A");
+        let port = a.link.listen(0).unwrap();
+        let t = Instant::now();
+        for _ in 0..3 {
+            let mut s = TcpStream::connect(local(port)).unwrap();
+            s.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+            read_frame(&mut s).unwrap(); // sunucu HELLO'su
+            drop(s);
+        }
+        assert!(t.elapsed() >= INCOMING_GAP * 2, "{:?}", t.elapsed());
+        a.link.close();
     }
 
     #[test]

@@ -1,11 +1,13 @@
 //! Şifreli kanal el sıkışması ve AES-256-GCM çerçeve şifrelemesi.
 //! Referans: `reference/electron/src/core/channel.js` (tel düzeyinde birebir aynı).
 //!
-//! 1) HELLO (açık): `{t,app,v,role,name,id,eph,nonce}` — ham anahtarlar base64url (dolgusuz)
+//! 0) COMMIT (açık, yalnızca istemci, ilk çerçeve): `{t:"commit",app,v,h}` — h = SHA-256(istemci HELLO baytları)
+//! 1) HELLO (açık): `{t,app,v,role,name,id,eph,nonce}` — ham anahtarlar base64url (dolgusuz).
+//!    Sunucu HELLO'sunu hemen gönderir; istemci kendi HELLO'sunu ancak sunucununkini aldıktan sonra gönderir.
 //! 2) AUTH  (açık): `{t:"auth", sig}` — Ed25519 imzası(transkript || rol)
 //! 3) Sonrası: AES-256-GCM; her yönün ayrı anahtarı ve 4 sıfır bayt + 8 bayt BE sayaçtan oluşan nonce'u var.
 //!
-//! Transkript = SHA-256("kopru-handshake-v1" || istemci HELLO baytları || sunucu HELLO baytları).
+//! Transkript = SHA-256("kopru-handshake-v2" || istemci HELLO baytları || sunucu HELLO baytları).
 
 use std::io::{Read, Write};
 use std::net::TcpStream;
@@ -21,8 +23,9 @@ use super::framing::{read_frame, write_frame, DeadlineReader, MAX_FRAME};
 use super::keys::{b64url, fingerprint, hkdf, unb64url, verify, Identity};
 
 pub const APP: &str = "kopru";
-pub const VERSION: u64 = 1;
-pub const LABEL: &[u8] = b"kopru-handshake-v1";
+/// 2: istemci taahhüdü (v1, ortadakinin kodu denemeyle eşitlemesine açıktı).
+pub const VERSION: u64 = 2;
+pub const LABEL: &[u8] = b"kopru-handshake-v2";
 pub const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 const TAG: usize = 16;
 
@@ -115,6 +118,30 @@ fn key32(s: &str) -> Result<[u8; 32], String> {
     v.try_into().map_err(|_| "geçersiz açık anahtar".to_string())
 }
 
+/// `t`, `app` ve `v` alanlarını sınar (eski sürümün HELLO'su da anlaşılır bir sürüm hatası verir).
+fn check_app_version(m: &Value, t: &str) -> Result<(), String> {
+    let mt = m.get("t").and_then(Value::as_str);
+    if (mt != Some(t) && mt != Some("hello")) || m.get("app").and_then(Value::as_str) != Some(APP) {
+        return Err("bu bir Köprü cihazı değil".into());
+    }
+    if m.get("v").and_then(Value::as_u64) != Some(VERSION) {
+        return Err(format!("uyumsuz sürüm: {}", m.get("v").cloned().unwrap_or(Value::Null)));
+    }
+    if mt != Some(t) {
+        return Err("bu bir Köprü cihazı değil".into());
+    }
+    Ok(())
+}
+
+fn parse_hello(frame: &[u8], role: Role) -> Result<Value, String> {
+    let m: Value = serde_json::from_slice(frame).map_err(|_| "bu bir Köprü cihazı değil".to_string())?;
+    check_app_version(&m, "hello")?;
+    if m.get("role").and_then(Value::as_str) != Some(role.other().as_str()) {
+        return Err("rol hatası".into());
+    }
+    Ok(m)
+}
+
 /// Bir TCP akışı üzerinde el sıkışmayı yapar. Tüm adım `HANDSHAKE_TIMEOUT` içinde bitmeli.
 pub fn handshake(
     stream: &TcpStream,
@@ -155,7 +182,9 @@ pub fn handshake_io<R: Read, W: Write>(
         }
     };
 
-    // 1) HELLO
+    // 1) HELLO. İstemci önce yalnızca HELLO'sunun özetini (taahhüt) gönderir, sunucunun HELLO'sunu
+    // aldıktan sonra kendi HELLO'sunu açıklar. Böylece hiçbir taraf (ve ortadaki) kendi değerlerini
+    // karşı tarafınkini görerek seçemez; 6 haneli kod denenerek eşitlenemez.
     let eph = EphemeralSecret::random_from_rng(rand::rngs::OsRng);
     let eph_pub = PublicKey::from(&eph);
     let my_nonce: [u8; 16] = rand::random();
@@ -168,19 +197,30 @@ pub fn handshake_io<R: Read, W: Write>(
         "id": b64url(&identity.raw), "eph": b64url(eph_pub.as_bytes()), "nonce": b64url(&my_nonce),
     });
     let my_hello = serde_json::to_vec(&hello).map_err(|e| e.to_string())?;
-    write_frame(wr, &my_hello).map_err(io_err)?;
 
-    let frame = read_frame(rd).map_err(io_err)?;
-    let m: Value = serde_json::from_slice(&frame).map_err(|_| "bu bir Köprü cihazı değil".to_string())?;
-    if m.get("t").and_then(Value::as_str) != Some("hello") || m.get("app").and_then(Value::as_str) != Some(APP) {
-        return Err("bu bir Köprü cihazı değil".into());
-    }
-    if m.get("v").and_then(Value::as_u64) != Some(VERSION) {
-        return Err(format!("uyumsuz sürüm: {}", m.get("v").cloned().unwrap_or(Value::Null)));
-    }
-    if m.get("role").and_then(Value::as_str) != Some(role.other().as_str()) {
-        return Err("rol hatası".into());
-    }
+    let (frame, m) = match role {
+        Role::Client => {
+            let commit = json!({"t": "commit", "app": APP, "v": VERSION, "h": b64url(&Sha256::digest(&my_hello))});
+            write_frame(wr, &serde_json::to_vec(&commit).map_err(|e| e.to_string())?).map_err(io_err)?;
+            let frame = read_frame(rd).map_err(io_err)?;
+            let m = parse_hello(&frame, role)?;
+            write_frame(wr, &my_hello).map_err(io_err)?;
+            (frame, m)
+        }
+        Role::Server => {
+            write_frame(wr, &my_hello).map_err(io_err)?;
+            let c = read_frame(rd).map_err(io_err)?;
+            let cm: Value = serde_json::from_slice(&c).map_err(|_| "bu bir Köprü cihazı değil".to_string())?;
+            check_app_version(&cm, "commit")?;
+            let h = unb64url(str_field(&cm, "h")?).ok_or("geçersiz base64")?;
+            let frame = read_frame(rd).map_err(io_err)?;
+            if Sha256::digest(&frame)[..] != h[..] {
+                return Err("taahhüt tutmuyor".into());
+            }
+            let m = parse_hello(&frame, role)?;
+            (frame, m)
+        }
+    };
     let peer_raw = key32(str_field(&m, "id")?)?;
     let peer_eph = key32(str_field(&m, "eph")?)?;
     unb64url(str_field(&m, "nonce")?).ok_or("geçersiz base64")?;
@@ -340,7 +380,7 @@ pub(crate) mod tests {
 
     fn good_hello() -> Value {
         let b = Identity::generate();
-        json!({"t":"hello","app":"kopru","v":1,"role":"server","name":"B","id":b64url(&b.raw),
+        json!({"t":"hello","app":"kopru","v":VERSION,"role":"server","name":"B","id":b64url(&b.raw),
                "eph":b64url(PublicKey::from(&EphemeralSecret::random_from_rng(rand::rngs::OsRng)).as_bytes()),
                "nonce":b64url(&[1u8;16])})
     }
@@ -351,7 +391,7 @@ pub(crate) mod tests {
         h["app"] = json!("x");
         assert_eq!(fake_peer(h), "bu bir Köprü cihazı değil");
         let mut h = good_hello();
-        h["v"] = json!(2);
+        h["v"] = json!(VERSION + 1);
         assert!(fake_peer(h).starts_with("uyumsuz sürüm"));
         let mut h = good_hello();
         h["role"] = json!("client");
@@ -384,6 +424,40 @@ pub(crate) mod tests {
         assert!(r.err().unwrap().contains("zaman aşımı"));
         assert!(start.elapsed() < Duration::from_secs(3));
         drop(s);
+    }
+
+    /// MITM'e karşı: istemci geçici anahtarını sunucunun HELLO'sunu görmeden açıklamamalı.
+    /// Aksi halde ortadaki, istemcinin değerlerini gördükten sonra kendi `nonce`unu deneyerek
+    /// (~2^20 HKDF, birkaç saniye) iki bacaktaki kodları eşitleyebilir.
+    #[test]
+    fn client_commits_before_revealing() {
+        let a = Identity::generate();
+        let (c, s) = tcp_pair();
+        let t = thread::spawn(move || handshake(&c, &a, "A", Role::Client));
+        let mut s = s;
+        let first: Value = serde_json::from_slice(&read_frame(&mut s).unwrap()).unwrap();
+        assert!(first.get("eph").is_none() && first.get("nonce").is_none(), "ilk çerçeve geçici anahtarı açıklıyor: {first}");
+        // Sunucu HELLO'su gelmeden istemci başka bir şey göndermemeli.
+        s.set_read_timeout(Some(Duration::from_millis(300))).unwrap();
+        assert!(read_frame(&mut s).is_err(), "istemci sunucuyu beklemeden açıkladı");
+        drop(s);
+        let _ = t.join();
+    }
+
+    /// Sunucu, taahhüde uymayan istemci HELLO'sunu reddeder.
+    #[test]
+    fn commitment_mismatch_rejected() {
+        let b = Identity::generate();
+        let (c, s) = tcp_pair();
+        let t = thread::spawn(move || handshake(&s, &b, "B", Role::Server));
+        let mut c = c;
+        let _server_hello = read_frame(&mut c).unwrap();
+        let mut h = good_hello();
+        h["role"] = json!("client");
+        let commit = json!({"t":"commit","app":"kopru","v":VERSION,"h":b64url(&[9u8; 32])});
+        write_frame(&mut c, &serde_json::to_vec(&commit).unwrap()).unwrap();
+        write_frame(&mut c, &serde_json::to_vec(&h).unwrap()).unwrap();
+        assert_eq!(t.join().unwrap().err().as_deref(), Some("taahhüt tutmuyor"));
     }
 
     #[test]

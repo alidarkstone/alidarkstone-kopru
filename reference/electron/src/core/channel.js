@@ -1,7 +1,10 @@
 'use strict';
 // Şifreli kanal. Bir TCP soketini sarar.
 //
-// El sıkışma (her iki taraf aynı adımları izler):
+// El sıkışma:
+//   0) COMMIT  (açık metin, yalnızca istemci, ilk çerçeve): { t:'commit', app, v, h: SHA-256(istemci HELLO) }
+//      İstemci kendi HELLO'sunu ancak sunucunun HELLO'sunu aldıktan sonra gönderir; böylece ortadaki biri
+//      kendi değerlerini karşı tarafınkini görerek seçip iki koddaki 6 haneyi denemeyle eşitleyemez.
 //   1) HELLO   (açık metin): uygulama, sürüm, cihaz adı, kalıcı Ed25519 kimliği, geçici X25519 anahtarı, rastgele nonce
 //   2) AUTH    (açık metin): Ed25519 imzası( transkript || rol )  -> karşı taraf kimliğinin sahibi olduğunu kanıtlar
 //   3) Sonrası: AES-256-GCM ile şifreli JSON mesajları. Her yön kendi anahtarına ve sayaç nonce'una sahiptir,
@@ -17,8 +20,8 @@ const { encodeFrame, FrameReader } = require('./framing');
 const { rawPublic, publicFromRaw, fingerprint, hkdf } = require('./keys');
 
 const APP = 'kopru';
-const VERSION = 1;
-const LABEL = Buffer.from('kopru-handshake-v1');
+const VERSION = 2;
+const LABEL = Buffer.from('kopru-handshake-v2');
 const HANDSHAKE_TIMEOUT = 10000;
 
 function b64(buf) { return buf.toString('base64url'); }
@@ -35,7 +38,7 @@ class SecureChannel extends EventEmitter {
     this.identity = opts.identity;
     this.role = opts.role;
     this.name = String(opts.name || 'Bilgisayar').slice(0, 64);
-    this.state = 'hello';
+    this.state = this.role === 'server' ? 'commit' : 'hello';
     this.closed = false;
     this.sendSeq = 0n;
     this.recvSeq = 0n;
@@ -55,7 +58,12 @@ class SecureChannel extends EventEmitter {
       nonce: b64(crypto.randomBytes(16)),
     };
     this.myHello = Buffer.from(JSON.stringify(hello));
-    this._writeRaw(this.myHello);
+    if (this.role === 'client') {
+      const h = crypto.createHash('sha256').update(this.myHello).digest();
+      this._writeRaw(Buffer.from(JSON.stringify({ t: 'commit', app: APP, v: VERSION, h: b64(h) })));
+    } else {
+      this._writeRaw(this.myHello);
+    }
   }
 
   _writeRaw(buf) {
@@ -66,6 +74,7 @@ class SecureChannel extends EventEmitter {
   _onFrame(frame) {
     if (this.closed) return;
     try {
+      if (this.state === 'commit') return this._onCommit(frame);
       if (this.state === 'hello') return this._onHello(frame);
       if (this.state === 'auth') return this._onAuth(frame);
       return this._onSecure(frame);
@@ -74,10 +83,25 @@ class SecureChannel extends EventEmitter {
     }
   }
 
-  _onHello(frame) {
-    const m = JSON.parse(frame.toString('utf8'));
-    if (m.t !== 'hello' || m.app !== APP) throw new Error('bu bir Köprü cihazı değil');
+  _checkAppVersion(m, t) {
+    if (!m || (m.t !== t && m.t !== 'hello') || m.app !== APP) throw new Error('bu bir Köprü cihazı değil');
     if (m.v !== VERSION) throw new Error('uyumsuz sürüm: ' + m.v);
+    if (m.t !== t) throw new Error('bu bir Köprü cihazı değil');
+  }
+
+  _onCommit(frame) {
+    const m = JSON.parse(frame.toString('utf8'));
+    this._checkAppVersion(m, 'commit');
+    this.peerCommit = unb64(m.h);
+    this.state = 'hello';
+  }
+
+  _onHello(frame) {
+    if (this.role === 'server' && !crypto.createHash('sha256').update(frame).digest().equals(this.peerCommit)) {
+      throw new Error('taahhüt tutmuyor');
+    }
+    const m = JSON.parse(frame.toString('utf8'));
+    this._checkAppVersion(m, 'hello');
     const expectRole = this.role === 'client' ? 'server' : 'client';
     if (m.role !== expectRole) throw new Error('rol hatası');
     this.peerRaw = unb64(m.id);
@@ -101,6 +125,7 @@ class SecureChannel extends EventEmitter {
     this.sas = String(sasNum).padStart(6, '0');
     this.eph = null; // geçici anahtar artık gerekmiyor
 
+    if (this.role === 'client') this._writeRaw(this.myHello);
     const sig = crypto.sign(null, Buffer.concat([this.transcript, Buffer.from(this.role)]), this.identity.privateKey);
     this._writeRaw(Buffer.from(JSON.stringify({ t: 'auth', sig: b64(sig) })));
     this.state = 'auth';
