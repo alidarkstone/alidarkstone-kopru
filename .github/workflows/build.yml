@@ -23,11 +23,11 @@ jobs:
           toolchain: stable
       - run: cargo test --release --locked
       - run: cargo build --release --locked
-      - run: Copy-Item target/release/kopru.exe Kopru.exe
+      - run: Copy-Item target/release/darkdrop.exe DarkDrop.exe
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: Kopru-Windows
-          path: Kopru.exe
+          name: DarkDrop-Windows
+          path: DarkDrop.exe
 
   macos:
     runs-on: macos-latest
@@ -43,22 +43,22 @@ jobs:
       - run: |
           cargo build --release --locked --target aarch64-apple-darwin
           cargo build --release --locked --target x86_64-apple-darwin
-      - name: Köprü.app paketle (Intel + Apple Silicon)
+      - name: DarkDrop.app paketle (Intel + Apple Silicon)
         run: |
-          APP="Köprü.app"
+          APP="DarkDrop.app"
           mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-          lipo -create -output "$APP/Contents/MacOS/kopru" \
-            target/aarch64-apple-darwin/release/kopru target/x86_64-apple-darwin/release/kopru
+          lipo -create -output "$APP/Contents/MacOS/darkdrop" \
+            target/aarch64-apple-darwin/release/darkdrop target/x86_64-apple-darwin/release/darkdrop
           VERSION=$(grep -m1 '^version' Cargo.toml | cut -d '"' -f2)
           sed "s/__VERSION__/$VERSION/g" packaging/macos/Info.plist > "$APP/Contents/Info.plist"
-          if [ -f packaging/macos/AppIcon.icns ]; then cp packaging/macos/AppIcon.icns "$APP/Contents/Resources/"; fi
+          cp assets/logo/AppIcon.icns "$APP/Contents/Resources/"
           # İmzasız; yalnızca yerel (ad-hoc) imza. İlk açılışta sağ tık > Aç gerekir.
           codesign --force --deep --sign - "$APP"
-          ditto -c -k --keepParent "$APP" Kopru-macOS.zip
+          ditto -c -k --keepParent "$APP" DarkDrop-macOS.zip
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: Kopru-macOS
-          path: Kopru-macOS.zip
+          name: DarkDrop-macOS
+          path: DarkDrop-macOS.zip
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
@@ -71,5 +71,5 @@ jobs:
       - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           files: |
-            Kopru-Windows/Kopru.exe
-            Kopru-macOS/Kopru-macOS.zip
+            DarkDrop-Windows/DarkDrop.exe
+            DarkDrop-macOS/DarkDrop-macOS.zip

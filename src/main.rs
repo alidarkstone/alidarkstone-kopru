@@ -22,10 +22,10 @@ fn main() {
 
 #[cfg(any(windows, target_os = "macos"))]
 fn show_error(msg: &str) {
-    rfd::MessageDialog::new().set_title("Köprü").set_description(msg).set_level(rfd::MessageLevel::Error).show();
+    rfd::MessageDialog::new().set_title("DarkDrop").set_description(msg).set_level(rfd::MessageLevel::Error).show();
 }
 
 #[cfg(not(any(windows, target_os = "macos")))]
 fn show_error(msg: &str) {
-    eprintln!("Köprü: {msg}");
+    eprintln!("DarkDrop: {msg}");
 }

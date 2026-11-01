@@ -179,7 +179,7 @@ pub fn semibold(size: f32) -> FontId {
 
 /// Yazı tiplerini ve iki temanın stilini bağlama bir kez yükler (tekrar çağrılması zararsızdır).
 pub fn install(ctx: &egui::Context) {
-    let key = egui::Id::new("kopru-theme-installed");
+    let key = egui::Id::new("darkdrop-theme-installed");
     if ctx.data(|d| d.get_temp::<bool>(key)).unwrap_or(false) {
         return;
     }

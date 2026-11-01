@@ -21,7 +21,7 @@ pub fn draw(ctx: &egui::Context, state: &UiState, out: &mut Vec<Action>, prefs: 
 
     handle_drops(ctx, state, out, prefs);
 
-    egui::SidePanel::left("kopru-sidebar")
+    egui::SidePanel::left("darkdrop-sidebar")
         .exact_width(SIDEBAR_W)
         .resizable(false)
         .frame(egui::Frame::none().fill(p.sidebar).inner_margin(Margin {
@@ -190,7 +190,7 @@ fn drop_overlay(ctx: &egui::Context, p: &Palette, state: &UiState) {
         return;
     }
     let screen = ctx.screen_rect();
-    let painter = ctx.layer_painter(egui::LayerId::new(Order::Tooltip, Id::new("kopru-drop")));
+    let painter = ctx.layer_painter(egui::LayerId::new(Order::Tooltip, Id::new("darkdrop-drop")));
     painter.rect_filled(screen, 0.0, p.bg.gamma_multiply(0.95));
     let zone = screen.shrink(18.0);
     painter.rect_filled(zone, 16.0, p.accent_soft);
@@ -249,10 +249,10 @@ fn sidebar(ui: &mut Ui, p: &Palette, state: &UiState, prefs: &mut UiPrefs) {
     // Uygulama kimliği + bağlantı durumu
     ui.horizontal(|ui| {
         ui.add_space(4.0);
-        w::tile(ui, p.accent, Icon::Bridge, 34.0);
+        w::logo(ui, 34.0);
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing.y = 0.0;
-            ui.label(w::text("Köprü", theme::semibold(15.0), p.text));
+            ui.label(w::text("DarkDrop", theme::semibold(15.0), p.text));
             ui.horizontal(|ui| {
                 let (color, label) = status_of(state, p);
                 let (r, _) = ui.allocate_exact_size(vec2(10.0, 14.0), Sense::hover());
@@ -444,7 +444,7 @@ fn devices_page(
         LinkPhase::Connecting | LinkPhase::Checking | LinkPhase::Pairing { .. }
     );
     let footer = if state.devices.is_empty() {
-        Some("Diğer bilgisayarda Köprü'nün açık olduğundan ve iki cihazın aynı Wi‑Fi ya da kablolu ağda bulunduğundan emin olun.")
+        Some("Diğer bilgisayarda DarkDrop'un açık olduğundan ve iki cihazın aynı Wi‑Fi ya da kablolu ağda bulunduğundan emin olun.")
     } else {
         None
     };
@@ -991,11 +991,11 @@ fn settings_page(
         s.row_inset(
             54.0,
             |ui| {
-                w::tile(ui, p.accent, Icon::Bridge, 30.0);
+                w::logo(ui, 30.0);
                 w::title_sub(
                     ui,
                     &p,
-                    &format!("Köprü {}", env!("CARGO_PKG_VERSION")),
+                    &format!("DarkDrop {}", env!("CARGO_PKG_VERSION")),
                     Some("Uçtan uca şifreli · yalnızca yerel ağ · telemetri yok"),
                 );
             },
@@ -1017,7 +1017,7 @@ fn pairing_sheet(
 ) {
     let screen = ctx.screen_rect();
     // Karartma: alttaki arayüze tıklanmasını engeller.
-    egui::Area::new(Id::new("kopru-scrim"))
+    egui::Area::new(Id::new("darkdrop-scrim"))
         .order(Order::Middle)
         .fixed_pos(screen.min)
         .show(ctx, |ui| {
@@ -1031,7 +1031,7 @@ fn pairing_sheet(
         .take(12)
         .collect();
     let peer = peer_name(state);
-    egui::Area::new(Id::new("kopru-pairing"))
+    egui::Area::new(Id::new("darkdrop-pairing"))
         .order(Order::Foreground)
         .anchor(Align2::CENTER_CENTER, vec2(0.0, -10.0))
         .show(ctx, |ui| {

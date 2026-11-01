@@ -1,8 +1,8 @@
-# Köprü (Rust) — mimari ve ekip sözleşmesi
+# DarkDrop (Rust) — mimari ve ekip sözleşmesi
 
 Hedef: **tek dosya, kurulumsuz** pano + dosya paylaşım uygulaması. (Fare/klavye paylaşımı kapsam dışıdır; kullanıcıya Input Leap önerilir. Electron referansındaki input kısmını PORT ETMEYİN.)
- Windows: tek `kopru.exe` (x86_64-pc-windows-gnu, `#![windows_subsystem = "windows"]`).
-macOS: tek `Köprü.app` (GitHub Actions'ta derlenir). Harici yardımcı program YOK; her şey aynı ikili dosyada.
+ Windows: tek `DarkDrop.exe` (x86_64-pc-windows-gnu, `#![windows_subsystem = "windows"]`).
+macOS: tek `DarkDrop.app` (GitHub Actions'ta derlenir). Harici yardımcı program YOK; her şey aynı ikili dosyada.
 Referans tasarım: `reference/electron/` (Electron sürümü). Protokol **tel düzeyinde birebir aynı** olmalı
 (`reference/electron/src/core/channel.js`, `link.js`, `discovery.js`, `features/*.js`). Davranışı oradan okuyun ama Rust'ta deyimsel yazın.
 
@@ -65,6 +65,6 @@ pub fn run_demo() -> eframe::Result<()>; // UiState::demo() ile
 
 ## Derleme
 ```
-cargo build --release --target x86_64-pc-windows-gnu   # kopru.exe
+cargo build --release --target x86_64-pc-windows-gnu   # darkdrop.exe
 cargo test                                              # Linux'ta birim testleri
 ```

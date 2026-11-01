@@ -121,7 +121,7 @@ impl UiState {
                 TransferView { id: "a2".into(), dir: TransferDir::Out, name: "fatura.pdf".into(), size: 220_000, done: 220_000, status: TransferStatus::Sent, path: None },
                 TransferView { id: "a3".into(), dir: TransferDir::In, name: "foto.heic".into(), size: 3_400_000, done: 0, status: TransferStatus::Offered, path: None },
             ],
-            download_dir: PathBuf::from("C:/Users/darkstone/Downloads/Köprü"),
+            download_dir: PathBuf::from("C:/Users/darkstone/Downloads/DarkDrop"),
         }
     }
 }

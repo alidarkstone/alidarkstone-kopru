@@ -118,7 +118,7 @@ impl Discovery {
         sock.set_read_timeout(Some(Duration::from_millis(250)))?;
         let shared = Arc::new(Shared { peers: Mutex::new(HashMap::new()), stop: AtomicBool::new(false) });
         let sh = shared.clone();
-        thread::Builder::new().name("kopru-discovery".into()).spawn(move || {
+        thread::Builder::new().name("darkdrop-discovery".into()).spawn(move || {
             let mut buf = [0u8; 2048];
             let mut last: Option<Instant> = None;
             while !sh.stop.load(Ordering::SeqCst) {

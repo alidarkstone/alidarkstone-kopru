@@ -1,4 +1,4 @@
-//! Köprü arayüzü (egui). Yalnızca `crate::state::UiState` okur ve `crate::state::Action` üretir.
+//! DarkDrop arayüzü (egui). Yalnızca `crate::state::UiState` okur ve `crate::state::Action` üretir.
 //!
 //! - [`run`]: gerçek uygulama penceresi.
 //! - [`run_demo`]: `UiState::demo()` ile örnek pencere.
@@ -116,8 +116,8 @@ impl eframe::App for App {
 
 fn native_options() -> eframe::NativeOptions {
     let mut vp = egui::ViewportBuilder::default()
-        .with_title("Köprü")
-        .with_app_id("kopru")
+        .with_title("DarkDrop")
+        .with_app_id("darkdrop")
         .with_inner_size([920.0, 640.0])
         .with_min_inner_size([720.0, 520.0])
         .with_icon(app_icon());
@@ -155,7 +155,7 @@ pub fn run_with(
     prefs: UiPrefs,
 ) -> eframe::Result<()> {
     eframe::run_native(
-        "Köprü",
+        "DarkDrop",
         native_options(),
         Box::new(move |cc| {
             theme::install(&cc.egui_ctx);
@@ -179,59 +179,12 @@ pub fn run_demo() -> eframe::Result<()> {
     )
 }
 
-/// 64×64 uygulama simgesi: mavi yuvarlak kare içinde beyaz köprü kemeri (kodla üretilir).
+/// Uygulama simgesi: DarkDrop logosu (assets/logo/darkdrop-256.rgba, 256×256 RGBA).
+pub(crate) const LOGO_RGBA: &[u8] = include_bytes!("../../assets/logo/darkdrop-256.rgba");
+pub(crate) const LOGO_SIZE: usize = 256;
+
 fn app_icon() -> egui::IconData {
-    const N: usize = 64;
-    let mut rgba = vec![0u8; N * N * 4];
-    let (top, bot) = ([0x3A, 0x9B, 0xFF], [0x00, 0x6A, 0xE6]);
-    for y in 0..N {
-        for x in 0..N {
-            let (fx, fy) = (x as f32 + 0.5, y as f32 + 0.5);
-            // yuvarlak kare maskesi (kenar yumuşatmalı)
-            let r = 14.0;
-            let dx = (fx - 32.0).abs() - (32.0 - 2.0 - r);
-            let dy = (fy - 32.0).abs() - (32.0 - 2.0 - r);
-            let d = (dx.max(0.0).powi(2) + dy.max(0.0).powi(2)).sqrt() + dx.max(dy).min(0.0) - r;
-            let mask = (0.5 - d).clamp(0.0, 1.0);
-            if mask <= 0.0 {
-                continue;
-            }
-            let t = fy / N as f32;
-            let mut c = [0f32; 3];
-            for i in 0..3 {
-                c[i] = top[i] as f32 + (bot[i] as f32 - top[i] as f32) * t;
-            }
-            // beyaz kemer ve tabliye
-            let arc_d = (((fx - 32.0).powi(2) + (fy - 58.0).powi(2)).sqrt() - 30.0).abs();
-            let arc = fy < 44.0 && fx > 8.0 && fx < 56.0;
-            let mut white = 0.0f32;
-            if arc {
-                white = (2.6 - arc_d).clamp(0.0, 1.0);
-            }
-            if (fy - 42.0).abs() < 2.2 && fx > 7.0 && fx < 57.0 {
-                white = 1.0;
-            }
-            for px in [20.0f32, 32.0, 44.0] {
-                let ytop = 58.0 - (900.0 - (px - 32.0).powi(2)).sqrt();
-                if (fx - px).abs() < 1.3 && fy > ytop && fy < 42.0 {
-                    white = 1.0;
-                }
-            }
-            if ((fx - 14.0).abs() < 1.8 || (fx - 50.0).abs() < 1.8) && fy > 42.0 && fy < 52.0 {
-                white = 1.0;
-            }
-            let i = (y * N + x) * 4;
-            for k in 0..3 {
-                rgba[i + k] = (c[k] + (255.0 - c[k]) * white).round() as u8;
-            }
-            rgba[i + 3] = (mask * 255.0) as u8;
-        }
-    }
-    egui::IconData {
-        rgba,
-        width: N as u32,
-        height: N as u32,
-    }
+    egui::IconData { rgba: LOGO_RGBA.to_vec(), width: LOGO_SIZE as u32, height: LOGO_SIZE as u32 }
 }
 
 impl ThemeChoice {

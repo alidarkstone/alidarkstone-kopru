@@ -72,7 +72,7 @@ impl ClipboardShare {
         let pend = pending.clone();
         let stop = Arc::new(AtomicBool::new(false));
         let (en, st) = (enabled.clone(), stop.clone());
-        let _ = thread::Builder::new().name("kopru-clipboard".into()).spawn(move || {
+        let _ = thread::Builder::new().name("darkdrop-clipboard".into()).spawn(move || {
             // Başlangıçtaki içerik gönderilmez.
             let mut last = backend.read_text().unwrap_or_default();
             loop {

@@ -474,6 +474,24 @@ pub fn tile(ui: &mut Ui, color: Color32, icon: Icon, size: f32) -> Response {
     resp
 }
 
+/// DarkDrop logosu (gömülü görüntüden doku; ilk çağrıda yüklenir).
+pub fn logo(ui: &mut Ui, size: f32) -> Response {
+    let (rect, resp) = ui.allocate_exact_size(vec2(size, size), Sense::hover());
+    let id = egui::Id::new("darkdrop-logo-texture");
+    let tex: Option<egui::TextureHandle> = ui.ctx().data(|d| d.get_temp(id));
+    let tex = tex.unwrap_or_else(|| {
+        let n = super::LOGO_SIZE;
+        let img = egui::ColorImage::from_rgba_unmultiplied([n, n], super::LOGO_RGBA);
+        let t = ui.ctx().load_texture("darkdrop-logo", img, egui::TextureOptions::LINEAR);
+        ui.ctx().data_mut(|d| d.insert_temp(id, t.clone()));
+        t
+    });
+    // Logonun kendi kenar boşluğunu telafi et (simge kare içinde ~%8.5 içeride).
+    let draw = rect.expand(size * 0.1);
+    ui.painter().image(tex.id(), draw, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), Color32::WHITE);
+    resp
+}
+
 pub fn paint_tile(painter: &Painter, rect: Rect, color: Color32, icon: Icon) {
     let r = rect.width() * 0.25;
     painter.rect_filled(rect, r, color);

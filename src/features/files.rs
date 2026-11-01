@@ -338,7 +338,7 @@ impl FileShare {
         self.changed();
         let me = self.clone();
         let id = id.to_string();
-        let r = thread::Builder::new().name("kopru-file-send".into()).spawn({
+        let r = thread::Builder::new().name("darkdrop-file-send".into()).spawn({
             let id = id.clone();
             move || me.stream(&id, &path, size)
         });

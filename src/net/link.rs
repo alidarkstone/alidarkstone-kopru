@@ -250,7 +250,7 @@ impl Link {
         l.set_nonblocking(true)?;
         lock(&self.inner.st).port = Some(port);
         let inner = self.inner.clone();
-        thread::Builder::new().name("kopru-accept".into()).spawn(move || {
+        thread::Builder::new().name("darkdrop-accept".into()).spawn(move || {
             let mut last_start: Option<Instant> = None;
             while !inner.closed.load(Ordering::SeqCst) {
                 if let Some(t) = last_start {
@@ -297,7 +297,7 @@ impl Link {
         inner.emit(LinkEvent::State);
         let inner2 = inner.clone();
         let r = thread::Builder::new()
-            .name("kopru-session".into())
+            .name("darkdrop-session".into())
             .spawn(move || inner2.run_session(sess, None, Some(addr), Role::Client));
         if r.is_err() {
             inner.close_session_any("iş parçacığı başlatılamadı");
@@ -464,7 +464,7 @@ impl Inner {
         let inner = self.clone();
         let sess2 = sess.clone();
         let r = thread::Builder::new()
-            .name("kopru-session".into())
+            .name("darkdrop-session".into())
             .spawn(move || inner.run_session(sess2, Some(s), None, Role::Server));
         if r.is_err() {
             self.close_session(&sess, Some("iş parçacığı başlatılamadı".into()));
@@ -508,7 +508,7 @@ impl Inner {
             let inner = self.clone();
             let s2 = sess.clone();
             if thread::Builder::new()
-                .name("kopru-writer".into())
+                .name("darkdrop-writer".into())
                 .spawn(move || inner.writer(s2, wstream, sealer))
                 .is_err()
             {
@@ -540,7 +540,7 @@ impl Inner {
         {
             let inner = self.clone();
             let s2 = sess.clone();
-            if thread::Builder::new().name("kopru-timer".into()).spawn(move || inner.ticker(s2)).is_err() {
+            if thread::Builder::new().name("darkdrop-timer".into()).spawn(move || inner.ticker(s2)).is_err() {
                 return self.close_session(&sess, Some("iş parçacığı başlatılamadı".into()));
             }
         }

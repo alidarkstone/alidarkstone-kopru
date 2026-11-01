@@ -1,4 +1,4 @@
-//! Ayarlar: kullanıcı veri klasöründe (Windows: %APPDATA%\Kopru, macOS: ~/Library/Application Support/Kopru)
+//! Ayarlar: kullanıcı veri klasöründe (Windows: %APPDATA%\DarkDrop, macOS: ~/Library/Application Support/DarkDrop)
 //! küçük bir JSON dosyası. Uygulama başka hiçbir yere yazmaz (gelen dosyalar hariç).
 
 use serde::{Deserialize, Serialize};
@@ -17,11 +17,11 @@ pub struct Settings {
 }
 
 pub fn data_dir() -> PathBuf {
-    dirs::config_dir().unwrap_or_else(std::env::temp_dir).join("Kopru")
+    dirs::config_dir().unwrap_or_else(std::env::temp_dir).join("DarkDrop")
 }
 
 pub fn default_download_dir() -> PathBuf {
-    dirs::download_dir().or_else(dirs::home_dir).unwrap_or_else(std::env::temp_dir).join("Köprü")
+    dirs::download_dir().or_else(dirs::home_dir).unwrap_or_else(std::env::temp_dir).join("DarkDrop")
 }
 
 impl Settings {
