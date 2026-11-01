@@ -310,6 +310,11 @@ fn safe_name_matches_reference() {
     let pairs: Vec<(String, String)> = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(pairs.len(), cases.len());
     for (input, expected) in pairs {
+        // Windows'taki Node, "C:x.txt" gibi sürücü önekli adları farklı ayrıştırır (path.win32.basename).
+        // Rust tarafı tüm platformlarda aynı (ve daha katı) sonucu verir; bu durumda karşılaştırma yapılmaz.
+        if cfg!(windows) && input.as_bytes().get(1) == Some(&b':') {
+            continue;
+        }
         assert_eq!(safe_name(&input), expected, "girdi {input:?}");
     }
 }
