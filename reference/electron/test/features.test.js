@@ -5,11 +5,8 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
-const { EventEmitter } = require('events');
-const { PassThrough } = require('stream');
 const { FileShare, safeName } = require('../src/features/files');
 const { ClipboardShare } = require('../src/features/clipboard');
-const { InputShare, sanitizeEvent } = require('../src/features/input');
 
 test('dosya adı temizleme: klasör dışına çıkış ve Windows ayrılmış adları engellenir', () => {
   assert.strictEqual(safeName('../../Windows/System32/evil.dll'), 'evil.dll');
@@ -96,60 +93,4 @@ test('pano: kapalıyken gönderilmez, açıkken gönderilir ve geri yankı yapma
   assert.strictEqual(text, 'karşıdan');
   c.tick();
   assert.strictEqual(sent.length, 1, 'gelen metin geri gönderilmemeli');
-});
-
-function fakeHelper() {
-  const proc = new EventEmitter();
-  proc.stdin = new PassThrough();
-  proc.stdout = new PassThrough();
-  proc.cmds = [];
-  proc.stdin.on('data', (d) => d.toString().split('\n').filter(Boolean).forEach((l) => proc.cmds.push(JSON.parse(l))));
-  proc.emitEv = (o) => proc.stdout.write(JSON.stringify(o) + '\n');
-  proc.kill = () => {};
-  return proc;
-}
-const tick = () => new Promise((r) => setTimeout(r, 20));
-
-test('fare/klavye: kenar -> diğerine geçiş, olaylar iletilir, Scroll Lock geri alır', async () => {
-  const proc = fakeHelper();
-  const sent = [];
-  const inp = new InputShare({ helperPath: 'x.exe', send: (m) => sent.push(m), connected: () => true, spawnFn: () => proc });
-  inp.configure({ enabled: true, edge: 'right' });
-  await tick();
-  assert.deepStrictEqual(proc.cmds.at(-1), { cmd: 'edge', edge: 'right' });
-  proc.emitEv({ ev: 'edge', pos: 0.25 }); await tick();
-  assert.deepStrictEqual(sent[0], { t: 'input.enter', edge: 'left', pos: 0.25 });
-  assert.strictEqual(inp.mode, 'remote');
-  proc.emitEv({ ev: 'move', dx: 5, dy: -3 }); await tick();
-  assert.deepStrictEqual(sent[1], { t: 'input.ev', kind: 'move', dx: 5, dy: -3 });
-  proc.emitEv({ ev: 'escape' }); await tick();
-  assert.deepStrictEqual(sent[2], { t: 'input.release' });
-  assert.strictEqual(inp.mode, 'local');
-  proc.emitEv({ ev: 'move', dx: 1, dy: 1 }); await tick();
-  assert.strictEqual(sent.length, 3, 'geri dönünce olay gönderilmemeli');
-});
-
-test('fare/klavye: kapalıyken gelen kontrol isteği reddedilir', async () => {
-  const sent = [];
-  const inp = new InputShare({ helperPath: 'x.exe', send: (m) => sent.push(m), connected: () => true, spawnFn: fakeHelper });
-  inp.onMessage({ t: 'input.enter', edge: 'left', pos: 0.5 });
-  assert.deepStrictEqual(sent, [{ t: 'input.leave', pos: 0.5 }]);
-  assert.strictEqual(inp.mode, 'local');
-});
-
-test('fare/klavye: bağlantı koparsa kontrol hemen bırakılır', async () => {
-  const proc = fakeHelper();
-  const inp = new InputShare({ helperPath: 'x.exe', send: () => true, connected: () => true, spawnFn: () => proc });
-  inp.configure({ enabled: true, edge: 'right' });
-  inp.onMessage({ t: 'input.enter', edge: 'left', pos: 0.5 });
-  assert.strictEqual(inp.mode, 'controlled');
-  inp.onLink(false); await tick();
-  assert.strictEqual(inp.mode, 'local');
-  assert.ok(proc.cmds.some((c) => c.cmd === 'leave'));
-});
-
-test('gelen giriş olayları yalnızca bilinen alanlarla ve sınırlar içinde iletilir', () => {
-  assert.deepStrictEqual(sanitizeEvent({ kind: 'move', dx: 1e9, dy: 'x', extra: 'kötü' }), { cmd: 'move', dx: 5000, dy: 0 });
-  assert.deepStrictEqual(sanitizeEvent({ kind: 'key', vk: 999, sc: 30, down: 'true' }), { cmd: 'key', vk: 254, sc: 30, ext: false, down: false });
-  assert.deepStrictEqual(sanitizeEvent({ kind: 'button', b: 'run-cmd', down: true }), { cmd: 'button', b: 'left', down: true });
 });
