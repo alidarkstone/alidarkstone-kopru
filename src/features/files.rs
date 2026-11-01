@@ -84,20 +84,30 @@ fn extname(name: &str) -> String {
     extname_start(&u).map(|i| String::from_utf16_lossy(&u[i..])).unwrap_or_default()
 }
 
+/// Windows aygıt adları: `con`, `prn`, `aux`, `nul`, `com0-9¹²³`, `lpt0-9¹²³`, `conin$`, `conout$`;
+/// ardından boşluklar ve isteğe bağlı uzantı (Windows "CON .txt"yi de aygıt sayar).
+/// Referanstaki `RESERVED`: `/^(con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³]|conin\$|conout\$) *(\..*)?$/i`
 fn is_reserved(n: &str) -> bool {
-    let b = n.as_bytes();
-    let rest = if b.len() >= 3 && ["con", "prn", "aux", "nul"].iter().any(|p| b[..3].eq_ignore_ascii_case(p.as_bytes())) {
-        &n[3..]
-    } else if b.len() >= 4
-        && (b[..3].eq_ignore_ascii_case(b"com") || b[..3].eq_ignore_ascii_case(b"lpt"))
-        && b[3].is_ascii_digit()
-    {
-        &n[4..]
-    } else {
-        return false;
-    };
-    // (\..*)?$  — '.' satır sonlandırıcılarıyla eşleşmez
-    rest.is_empty() || (rest.starts_with('.') && !rest.chars().any(|c| matches!(c, '\n' | '\r' | '\u{2028}' | '\u{2029}')))
+    let ci = |p: &str| n.len() >= p.len() && n.as_bytes()[..p.len()].eq_ignore_ascii_case(p.as_bytes());
+    let mut rests: Vec<&str> = ["conout$", "conin$", "con", "prn", "aux", "nul"].iter().filter(|p| ci(p)).map(|p| &n[p.len()..]).collect();
+    for p in ["com", "lpt"] {
+        if ci(p) {
+            let mut it = n[3..].chars();
+            if matches!(it.next(), Some('0'..='9' | '¹' | '²' | '³')) {
+                rests.push(it.as_str());
+            }
+        }
+    }
+    // ` *(\..*)?$` — '.' satır sonlandırıcılarıyla eşleşmez
+    rests.into_iter().any(|r| {
+        let r = r.trim_start_matches(' ');
+        r.is_empty() || (r.starts_with('.') && !r.chars().any(|c| matches!(c, '\n' | '\r' | '\u{2028}' | '\u{2029}')))
+    })
+}
+
+/// Görünen adı ters çeviren yön denetim karakterleri ("fatura\u{202e}fdp.exe" → "faturaexe.pdf" görünür).
+fn is_bidi_control(c: u16) -> bool {
+    matches!(c, 0x061c | 0x200e | 0x200f | 0x202a..=0x202e | 0x2066..=0x2069)
 }
 
 /// Karşı taraftan gelen dosya adını güvenli bir yerel ada çevirir (referanstaki `safeName`).
@@ -108,7 +118,7 @@ pub fn safe_name(name: &str) -> String {
     let base = s.rsplit('/').next().unwrap_or("");
     let mut u: Vec<u16> = base
         .encode_utf16()
-        .map(|c| if c <= 0x1f || "<>:\"/\\|?*".encode_utf16().any(|x| x == c) { b'_' as u16 } else { c })
+        .map(|c| if c <= 0x1f || is_bidi_control(c) || "<>:\"/\\|?*".encode_utf16().any(|x| x == c) { b'_' as u16 } else { c })
         .collect();
     while matches!(u.last(), Some(&c) if c == b'.' as u16 || c == b' ' as u16) {
         u.pop();
@@ -138,13 +148,18 @@ fn part_of(p: &Path) -> PathBuf {
     PathBuf::from(s)
 }
 
+/// Yol herhangi bir şekilde dolu mu (sarkan sembolik bağ dahil; `exists()` bağı izler).
+fn taken(p: &Path) -> bool {
+    fs::symlink_metadata(p).is_ok()
+}
+
 /// `dir/name`, varsa `name (2).ext`, `name (3).ext`… (`.part` dosyaları da dolu sayılır).
 pub fn unique_path(dir: &Path, name: &str) -> PathBuf {
     let ext = extname(name);
     let base = &name[..name.len() - ext.len()];
     let mut p = dir.join(name);
     let mut i = 2u64;
-    while p.exists() || part_of(&p).exists() {
+    while taken(&p) || taken(&part_of(&p)) {
         p = dir.join(format!("{base} ({i}){ext}"));
         i += 1;
     }
@@ -595,7 +610,7 @@ impl FileShare {
                     } else {
                         let (part, fin) = (t.part.take().unwrap_or_default(), t.final_path.clone().unwrap_or_default());
                         // Nadir yarış: aynı adla başka dosya oluştuysa yeni ad seç.
-                        let fin = if fin.exists() {
+                        let fin = if taken(&fin) {
                             unique_path(fin.parent().unwrap_or(Path::new(".")), &t.name)
                         } else {
                             fin
@@ -675,6 +690,15 @@ mod tests {
             ("\u{feff}bom", "bom"),
             ("C:x.txt", "C_x.txt"),
             ("con.\u{2028}x", "con.\u{2028}x"),
+            ("CON .txt", "_CON .txt"),
+            ("nul  .tar.gz", "_nul  .tar.gz"),
+            ("com¹", "_com¹"),
+            ("LPT³.log", "_LPT³.log"),
+            ("CONIN$", "_CONIN$"),
+            ("conout$.txt", "_conout$.txt"),
+            ("conx .txt", "conx .txt"),
+            ("fatura\u{202e}fdp.exe", "fatura_fdp.exe"),
+            ("\u{2066}a\u{2069}\u{200f}", "_a__"),
             ("x\\", "x"),
             ("/abs/path/ok.txt", "ok.txt"),
         ];
@@ -717,6 +741,18 @@ mod tests {
         assert_eq!(unique_path(&d, ".gizli"), d.join(".gizli (2)"));
         fs::write(d.join("arsiv.tar.gz"), b"").unwrap();
         assert_eq!(unique_path(&d, "arsiv.tar.gz"), d.join("arsiv.tar (2).gz"));
+        let _ = fs::remove_dir_all(d);
+    }
+
+    /// İndirme klasöründeki (sarkan) sembolik bağ da dolu sayılır; üzerine yazılmaz.
+    #[cfg(unix)]
+    #[test]
+    fn dangling_symlink_is_taken() {
+        let d = tmpdir("link");
+        std::os::unix::fs::symlink(d.join("yok/hedef"), d.join("a.txt")).unwrap();
+        std::os::unix::fs::symlink(d.join("yok/hedef2"), d.join("b.txt.part")).unwrap();
+        assert_eq!(unique_path(&d, "a.txt"), d.join("a (2).txt"));
+        assert_eq!(unique_path(&d, "b.txt"), d.join("b (2).txt"));
         let _ = fs::remove_dir_all(d);
     }
 

@@ -12,11 +12,11 @@ const path = require('path');
 const { EventEmitter } = require('events');
 
 const CHUNK = 256 * 1024;
-const RESERVED = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])(\..*)?$/i;
+const RESERVED = /^(con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³]|conin\$|conout\$) *(\..*)?$/i;
 
 function safeName(name) {
   let n = path.basename(String(name || '').replace(/\\/g, '/'));
-  n = n.replace(/[\u0000-\u001f<>:"/\\|?*]/g, '_').replace(/[. ]+$/, '').trim();
+  n = n.replace(/[\u0000-\u001f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069<>:"/\\|?*]/g, '_').replace(/[. ]+$/, '').trim();
   if (!n || n === '.' || n === '..') n = 'dosya';
   if (RESERVED.test(n)) n = '_' + n;
   if (n.length > 200) {

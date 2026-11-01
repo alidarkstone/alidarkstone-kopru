@@ -249,14 +249,15 @@ pub fn run() -> Result<(), String> {
             for ev in rx {
                 if let LinkEvent::State = ev {
                     match c.link.phase() {
-                        LinkPhase::Idle => c.files.abort_all(),
                         LinkPhase::Connected => {
                             if let Some(p) = c.link.peer() {
                                 c.settings.lock().unwrap().last_peer = p.id;
                                 c.save();
                             }
                         }
-                        _ => {}
+                        // Aşama olay anında değil burada okunur: oturum kapanıp hemen yenisi başladıysa
+                        // Idle hiç görülmeyebilir. Bağlı değilken hiçbir aktarım sürmemeli.
+                        _ => c.files.abort_all(),
                     }
                 }
                 c.repaint();

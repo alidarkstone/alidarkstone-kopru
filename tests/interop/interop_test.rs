@@ -294,7 +294,8 @@ fn safe_name_matches_reference() {
         "..", "...", "con", "CON.txt", "com1.tar.gz", "lpt9", "coma", "nul.", "aux .", "  boşluk  ", "a<b>c:d\"e|f?g*h",
         "tab\there\nnew", "dosya. . .", ".gizli", "\u{a0}nbsp\u{a0}", "a\u{85}", "\u{feff}bom", "C:x.txt", "con.\u{2028}x",
         "x\\", "name.", "/abs/path/ok.txt", "trail/", "Prn.\u{3000}", "\u{3000}\u{3000}", "a\u{7f}b", "çok.nokta.lı.ad.tar.gz",
-        ". .", "..gizli", "AUX.", "COM0.x", "lpt", "\u{1}\u{2}", "ad\u{2028}", "x.\u{2029}",
+        ". .", "..gizli", "AUX.", "COM0.x", "lpt", "\u{1}\u{2}", "ad\u{2028}", "x.\u{2029}", "CON .txt", "nul  .a",
+        "com¹", "LPT³.log", "CONIN$", "conout$.txt", "conx .txt", "fatura\u{202e}fdp.exe", "\u{2066}a\u{2069}\u{200f}", "\u{61c}x",
     ]
     .iter()
     .map(|s| s.to_string())

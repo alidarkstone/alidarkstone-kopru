@@ -54,7 +54,9 @@ impl ClipboardBackend for SystemClipboard {
 
 pub struct ClipboardShare {
     enabled: Arc<AtomicBool>,
-    incoming: Mutex<mpsc::Sender<String>>,
+    /// Yazılmayı bekleyen en son gelen metin (yalnızca sonuncusu tutulur: sel birikmez).
+    pending: Arc<Mutex<Option<String>>>,
+    wake: mpsc::SyncSender<()>,
     stop: Arc<AtomicBool>,
 }
 
@@ -65,7 +67,9 @@ impl ClipboardShare {
     }
 
     pub fn start_with(mut backend: Box<dyn ClipboardBackend>, send: Sender, enabled: Arc<AtomicBool>, poll: Duration) -> Self {
-        let (tx, rx) = mpsc::channel::<String>();
+        let (tx, rx) = mpsc::sync_channel::<()>(1);
+        let pending = Arc::new(Mutex::new(None::<String>));
+        let pend = pending.clone();
         let stop = Arc::new(AtomicBool::new(false));
         let (en, st) = (enabled.clone(), stop.clone());
         let _ = thread::Builder::new().name("kopru-clipboard".into()).spawn(move || {
@@ -73,9 +77,11 @@ impl ClipboardShare {
             let mut last = backend.read_text().unwrap_or_default();
             loop {
                 match rx.recv_timeout(poll) {
-                    Ok(text) => {
-                        last = text;
-                        backend.write_text(&last);
+                    Ok(()) => {
+                        if let Some(text) = pend.lock().unwrap_or_else(|e| e.into_inner()).take() {
+                            last = text;
+                            backend.write_text(&last);
+                        }
                         continue;
                     }
                     Err(RecvTimeoutError::Disconnected) => return,
@@ -95,7 +101,7 @@ impl ClipboardShare {
                 send(&Msg::ClipText { text: last.clone() });
             }
         });
-        ClipboardShare { enabled, incoming: Mutex::new(tx), stop }
+        ClipboardShare { enabled, pending, wake: tx, stop }
     }
 
     /// `clip.text` işler (kapalıyken false döner, referanstaki gibi).
@@ -107,7 +113,8 @@ impl ClipboardShare {
         if text.len() > MAX_TEXT {
             return true;
         }
-        let _ = self.incoming.lock().unwrap_or_else(|e| e.into_inner()).send(text.clone());
+        *self.pending.lock().unwrap_or_else(|e| e.into_inner()) = Some(text.clone());
+        let _ = self.wake.try_send(()); // dolu: zaten bir uyandırma bekliyor, en son metni o alır
         true
     }
 
@@ -204,6 +211,35 @@ mod tests {
         assert_eq!(*fake.0.lock().unwrap(), "uzak 19");
         assert!(sent.lock().unwrap().is_empty(), "gelen metin geri gönderilmemeli: {:?}", sent.lock().unwrap());
         assert!(t.elapsed() < Duration::from_secs(5));
+    }
+
+    /// Pano yazımı yavaşken gelen sel birikmez: yalnızca en son metin yazılır (bellek sınırlı).
+    #[test]
+    fn incoming_flood_coalesces() {
+        struct Slow(Arc<Mutex<Vec<String>>>);
+        impl ClipboardBackend for Slow {
+            fn read_text(&mut self) -> Option<String> {
+                self.0.lock().unwrap().last().cloned()
+            }
+            fn write_text(&mut self, t: &str) {
+                thread::sleep(Duration::from_millis(50));
+                self.0.lock().unwrap().push(t.into());
+            }
+        }
+        let writes = Arc::new(Mutex::new(Vec::new()));
+        let c = ClipboardShare::start_with(
+            Box::new(Slow(writes.clone())),
+            Arc::new(|_: &Msg| true),
+            Arc::new(AtomicBool::new(true)),
+            Duration::from_millis(20),
+        );
+        for i in 0..200 {
+            assert!(c.on_message(&Msg::ClipText { text: format!("uzak {i}") }));
+        }
+        thread::sleep(Duration::from_millis(400));
+        let w = writes.lock().unwrap();
+        assert!(w.len() <= 4, "{} yazım: sel kuyrukta birikiyor", w.len());
+        assert_eq!(w.last().map(String::as_str), Some("uzak 199"));
     }
 
     #[test]
