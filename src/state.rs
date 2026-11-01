@@ -1,7 +1,6 @@
 //! Arayüzün okuduğu anlık görüntü ve arayüzün ürettiği eylemler.
 //! Arayüz (src/ui) yalnızca bu dosyadaki türleri bilir; ağ/özellik koduna doğrudan dokunmaz.
 
-use crate::msg::Edge;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -35,26 +34,6 @@ pub struct TrustedView {
     pub id: String,
     pub name: String,
     pub since: String,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum InputMode {
-    Local,
-    /// bu bilgisayarın imleci diğerinde
-    Remote,
-    /// diğer bilgisayar bunu kontrol ediyor
-    Controlled,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct InputView {
-    pub available: bool,
-    /// macOS: Erişilebilirlik izni gerekli ama verilmemiş
-    pub needs_permission: bool,
-    pub enabled: bool,
-    pub edge: Edge,
-    pub mode: InputMode,
-    pub error: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -97,7 +76,6 @@ pub struct UiState {
     pub devices: Vec<DeviceView>,
     pub trusted: Vec<TrustedView>,
     pub clipboard_enabled: bool,
-    pub input: InputView,
     pub transfers: Vec<TransferView>,
     pub download_dir: PathBuf,
 }
@@ -111,7 +89,6 @@ pub enum Action {
     ConfirmPairing(bool),
     Forget(String),
     SetClipboard(bool),
-    SetInput { enabled: bool, edge: Edge },
     PickFiles,                 // dosya seçme penceresi aç ve gönder
     SendPaths(Vec<PathBuf>),   // sürükle-bırak
     FileAccept(String),
@@ -120,7 +97,6 @@ pub enum Action {
     FileShow(String),
     OpenDownloads,
     ChooseDownloadDir,
-    OpenAccessibilitySettings, // macOS
 }
 
 impl UiState {
@@ -138,7 +114,6 @@ impl UiState {
             ],
             trusted: vec![TrustedView { id: "9a0c11d2e3f40516".into(), name: "MacBook Air".into(), since: "2026-11-01".into() }],
             clipboard_enabled: true,
-            input: InputView { available: true, needs_permission: false, enabled: true, edge: Edge::Right, mode: InputMode::Local, error: String::new() },
             transfers: vec![
                 TransferView { id: "a1".into(), dir: TransferDir::In, name: "Sunum.key".into(), size: 48_000_000, done: 31_000_000, status: TransferStatus::Receiving, path: None },
                 TransferView { id: "a2".into(), dir: TransferDir::Out, name: "fatura.pdf".into(), size: 220_000, done: 220_000, status: TransferStatus::Sent, path: None },

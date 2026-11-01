@@ -2,7 +2,6 @@
 #![allow(dead_code)]
 
 mod features;
-mod input;
 mod msg;
 mod net;
 mod state;
