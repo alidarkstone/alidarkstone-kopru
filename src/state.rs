@@ -97,6 +97,8 @@ pub enum Action {
     FileShow(String),
     OpenDownloads,
     ChooseDownloadDir,
+    /// "system" | "light" | "dark" (kaydedilmek için)
+    SetTheme(String),
 }
 
 impl UiState {

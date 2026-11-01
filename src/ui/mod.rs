@@ -77,7 +77,7 @@ pub struct UiPrefs {
 }
 
 impl UiPrefs {
-    fn macos_default() -> Self {
+    pub fn macos_default() -> Self {
         UiPrefs {
             titlebar_inset: if cfg!(target_os = "macos") { 26.0 } else { 0.0 },
             ..Default::default()
@@ -99,7 +99,11 @@ impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let s = (self.state)();
         self.out.clear();
+        let theme_before = self.prefs.theme;
         draw(ctx, &s, &mut self.out, &mut self.prefs);
+        if self.prefs.theme != theme_before {
+            self.out.push(Action::SetTheme(self.prefs.theme.as_str().to_string()));
+        }
         for a in self.out.drain(..) {
             (self.act)(a);
         }
